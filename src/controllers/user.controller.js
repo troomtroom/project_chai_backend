@@ -23,8 +23,6 @@ const registerUser = asyncHandler( async (req, res) => {
 
     const {fullName, email, username, password} = req.body
 
-    console.log("email: ", email);
-
     // can make many if else blocks, alternate method used
     /*if(fullName === ""){
         throw new ApiError(400, "fullname is required")
@@ -91,8 +89,8 @@ const registerUser = asyncHandler( async (req, res) => {
 
     // checking for images
 
-    const avatarLocalPath = req.files?.avatar[0]?.path;
-    const coverImageLocalPath = req.files?.coverImage[0]?.path;
+    const avatarLocalPath = req.files?.avatar?.[0]?.path;
+    const coverImageLocalPath = req.files?.coverImage?.[0]?.path;
 
     if(!avatarLocalPath) {
         throw new ApiError(400, "Avatar file is required")
@@ -101,7 +99,9 @@ const registerUser = asyncHandler( async (req, res) => {
     // uploading to cloudinary
 
     const avatar = await uploadOnCloudinary(avatarLocalPath)
-    const coverImage = await uploadOnCloudinary(coverImageLocalPath)
+    const coverImage = coverImageLocalPath 
+        ? await uploadOnCloudinary(coverImageLocalPath)
+        : null
 
 
     if(!avatar) {
@@ -110,7 +110,7 @@ const registerUser = asyncHandler( async (req, res) => {
 
 
     const user = await User.create({
-        fullName,
+        fullname: fullName,
         avatar: avatar.url,
         coverImage: coverImage?.url || "",
         email,
