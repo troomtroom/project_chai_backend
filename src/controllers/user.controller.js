@@ -1,7 +1,7 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js"
 import { User } from "../models/user.model.js"
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import { deleteFromCloudinary, uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { response } from "express";
 import { trusted } from "mongoose";
@@ -241,7 +241,7 @@ const logoutUser = asyncHandler( async(req,res)=>{
     // since we are using auth middleware before logoutUser in routes
     // we have access to user here
 
-    User.findByIdAndUpdate(
+    await User.findByIdAndUpdate(
         req.user._id,
         {
             // set operator is a mongoDB
@@ -316,12 +316,12 @@ const refreshAccessToken = asyncHandler(async (req, res) =>
                 secure: true
             }
     
-            const {accessToken, newRefreshToken} = await generateAccessandRefreshTokens(user._id)
+            const {accessToken, refreshToken: newRefreshToken} = await generateAccessandRefreshTokens(user._id)
     
     
             return res
             .status(200)
-            .cookie("accessToken", accessTokenessToken, options)
+            .cookie("accessToken", accessToken, options)
             .cookie("refreshToken", newRefreshToken, options)
             .json(
                 new ApiResponse(
@@ -336,9 +336,205 @@ const refreshAccessToken = asyncHandler(async (req, res) =>
 
 })
 
+
+const changeCurrentPassword = asyncHandler(async(req,res)=> {
+    const {oldPassword, newPassword, confirmPassword} = req.body
+
+    // validations start
+
+    if([oldPassword,newPassword,confirmPassword].some(
+        (field) => field?.trim() === ""
+    )) {
+        throw new ApiError(400, "All fields are required")
+    }
+
+    if(newPassword!== confirmPassword){
+        throw new ApiError(400, "New Password and confirm password don't match")
+    }
+
+
+    if(oldPassword === newPassword){
+        throw new ApiError(400, "New Password cannot be same as old password")
+    }
+    
+    if (newPassword.length < 8) {
+        throw new ApiError(
+            400,
+            "Password must be at least 8 characters"
+        )
+    }
+
+
+    // validations end
+
+
+
+    
+    const user = await User.findById(req.user?._id)
+    
+    if(!user){
+        throw new ApiError(401, "User not found")
+    }
+
+    const isPasswordCorrect = await user.isPasswordCorrect(oldPassword)
+
+    if(!isPasswordCorrect){
+        throw new ApiError(400, "Invalid Old Password")
+    }
+
+    
+
+    user.password = newPassword
+
+    await user.save({validateBeforeSave:false})
+
+
+    return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "Password Changed Succesfully"))
+})
+
+
+const getCurrentUser = asyncHandler(async (req,res) =>{
+    return res
+    .status(200)
+    .json(new ApiResponse(200, req.user, "Current User Fetched Successfully"))
+})
+
+const updateAccountDetails = asyncHandler(async(req,res)=>{
+    const {fullname, email} = req.body
+
+    if (!fullname && !email) {
+        throw new ApiError(
+            400,
+            "At least one field is required"
+        )
+    }
+
+    const updateFields = {}
+
+    if(fullname?.trim()){
+        updateFields.fullname = fullname
+    }
+
+    if(email?.trim()){
+        updateFields.email = email
+    }
+
+    const user = await User.findByIdAndUpdate(
+        req.user?._id,
+        {
+            $set: updateFields
+        },
+        {
+            new: true,
+            runValidators: true
+        }
+    ).select("-password -refreshToken")
+
+
+    return res
+    .status(200)
+    .json(new ApiResponse(200,user, "Account Details updated successfully"))
+
+})
+
+
+// for updating files and photos we will need to use two middlewares
+// Multer middleware for files
+// auth middleware for user validation
+
+const updateUserAvatar = asyncHandler(async(req,res)=>
+    {
+        const avatarLocalPath = req.file?.path
+
+        if(!avatarLocalPath){
+            throw new ApiError(400, "Avatar File is Missing")
+        }
+
+        // get current user
+
+        const currentUser = await User.findById(req.user?._id)
+
+        const oldAvatarUrl = currentUser.avatar
+
+
+        const avatar = await uploadOnCloudinary(avatarLocalPath)
+
+        if(!avatar?.url){
+            throw new ApiError(500, "Error while uploading on Avatar")
+        }
+
+
+        const user = await User.findByIdAndUpdate(
+            req.user?._id,
+            {
+                $set: {
+                    avatar: avatar.url
+                }
+            },
+            {
+                new: true
+            }
+        ).select("-password -refreshToken")
+
+        if(oldAvatarUrl){
+            deleteFromCloudinary(oldAvatarUrl)
+        }
+        return res.status(200)
+        .json(new ApiResponse(200, user,"Avatar Updated Succesfully"))
+})
+
+
+const updateUserCoverImage = asyncHandler(async(req,res)=>
+    {
+        const coverImageLocalPath = req.file?.path
+
+        if(!coverImageLocalPath){
+            throw new ApiError(400, "Cover Image File is Missing")
+        }
+
+        // get current user
+
+        const currentUser = await User.findById(req.user?._id)
+
+        const oldCoverImageUrl = currentUser?.coverImage
+
+        
+        const coverImage= await uploadOnCloudinary(coverImageLocalPath)
+
+        if(!coverImage?.url){
+            throw new ApiError(500, "Error while uploading Cover Image")
+        }
+
+
+        const user = await User.findByIdAndUpdate(
+            req.user?._id,
+            {
+                $set: {
+                    coverImage: coverImage.url
+                }
+            },
+            {
+                new: true
+            }
+        ).select("-password -refreshToken")
+
+        if(oldCoverImageUrl && oldCoverImageUrl.trim() !== ""){
+            deleteFromCloudinary(oldCoverImageUrl)
+        }
+        return res.status(200)
+        .json(new ApiResponse(200, user,"Cover Image Updated Succesfully"))
+})
+
 export { 
     registerUser,
     loginUser,
     logoutUser,
-    refreshAccessToken
+    refreshAccessToken,
+    changeCurrentPassword,
+    getCurrentUser,
+    updateAccountDetails,
+    updateUserAvatar,
+    updateUserCoverImage
  }
