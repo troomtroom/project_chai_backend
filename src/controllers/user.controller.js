@@ -527,11 +527,10 @@ const updateUserCoverImage = asyncHandler(async(req,res)=>
         .json(new ApiResponse(200, user,"Cover Image Updated Succesfully"))
 })
 
-const getUserChannelProfile = asyncHandler(async(req,res) => {
-    const {username} = req.params
+const getUserChannelProfile = asyncHandler(async(req, res) => {
+    const { username } = req.params
 
-
-    if(!username?.trim()){
+    if (!username?.trim()) {
         throw new ApiError(400, "Username is missing")
     }
 
@@ -558,16 +557,16 @@ const getUserChannelProfile = asyncHandler(async(req,res) => {
             }
         },
         {
-            $addFields:{
+            $addFields: {
                 subscribersCount: {
-                    $size: "subscribers"
+                    $size: "$subscribers" // Added $ here
                 },
                 channelsSubscribedToCount: {
                     $size: "$subscribedTo"
                 },
                 isSubscribed: {
-                    $con: {
-                        if: {$in: [req.user?._id, "$subscribers.subscriber"]},
+                    $cond: { // Fixed typo: $con -> $cond
+                        if: { $in: [req.user?._id, "$subscribers.subscriber"] },
                         then: true,
                         else: false
                     }
@@ -575,7 +574,7 @@ const getUserChannelProfile = asyncHandler(async(req,res) => {
             }
         },
         {
-            project: {
+            $project: { // Fixed typo: project -> $project
                 fullname: 1,
                 username: 1,
                 subscribersCount: 1,
@@ -586,18 +585,19 @@ const getUserChannelProfile = asyncHandler(async(req,res) => {
                 email: 1
             }
         }
-
     ])
-    // aggregate pipelines return arrays
 
-    if(!channel?.length) {
-        throw new ApiError(404, "Channel Does not exist")
+    if (!channel?.length) {
+        throw new ApiError(404, "Channel does not exist")
     }
 
     return res
-    .status(200)
-    .json( new ApiResponse(200, channel[0], "User channel fetched successfully"))
+        .status(200)
+        .json(new ApiResponse(200, channel[0], "User channel fetched successfully"))
 })
+
+
+
 
 export { 
     registerUser,
